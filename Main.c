@@ -1,14 +1,13 @@
 #include <stdio.h>
 #include <string.h>
-
+#include <stdlib.h>
 #define TAILLETAB 4
 int priorites[TAILLETAB]; //Table d'allocation des priorités (choisie avec ces pourcentages-là par défaut)
-
 //affiche le tableau d'allocation des priorités
 void afficheTableau(){
 	printf("**********************************************\nTableau des priorités:\n");
 	printf("———————————————————————————————————\n|numéro de priorité | pourcentage |\n");
-	for (int i = 0; i < 4; ++i)
+	for (int i = 0; i < TAILLETAB; ++i)
 	{
 		printf("| %d                 | %d          |\n",i,priorites[i]);
 	}
@@ -64,6 +63,51 @@ void modifierTableau(){
 		afficheTableau();
 	}
 }
+
+int PGCD(int a, int b){
+    if(a==b){
+            return a;        
+    }     
+    else{
+        if(a>b)
+           return PGCD(a-b, b);
+        else
+           return PGCD(a, b-a);
+    }
+}
+
+int superPGCD(int tab[]){
+	int pgcd = tab[0];
+	for (int i = 0; i < TAILLETAB-1; ++i)
+	{
+		pgcd = PGCD(pgcd,tab[i+1]);
+	}
+	return pgcd;
+}
+
+int* genereRoundRobin(int taille){
+	int *round = malloc(taille * sizeof(int));
+	int compteur[taille];
+	int increment = 0;
+	for (int i = 0; i < TAILLETAB; ++i)
+	{	
+		compteur[i] = priorites[i]/taille;
+	}
+	for (int i = 0; i < taille; ++i)
+	{
+		while(compteur[increment] == 0){
+			increment++;
+			if(increment > TAILLETAB){
+				increment = 0;
+			}
+		}
+		round[i] = increment;
+		compteur[increment]--;
+		increment++;
+	}
+	return round;
+}
+
 int main(int argc, char const *argv[])
 {
 	if(argc == 1){
@@ -71,14 +115,17 @@ int main(int argc, char const *argv[])
 		printf("Vous n'avez pas entré d'options. Options disponibles :\n -t : afficher ou modifier la table d'allocation CPU\n");
 		return(1);
 	}
-	priorites[0] = 40;
-	priorites[1] = 30;
-	priorites[2] = 20;
-	priorites[3] = 10;
+
+	for (int i = 0; i < TAILLETAB; ++i)
+	{
+		priorites[i] = 100/TAILLETAB;
+	}
 
 	//Si il y a l'argument '-t', on affiche la table d'allocation CPU
 	if(argc == 2 && strcmp ("-t", argv[1]) == 0){
 		modifierTableau();
 	}
+	int pgcd = superPGCD(priorites);
+	int* roundRobin = genereRoundRobin(100/pgcd);
 	return 0;
 }
