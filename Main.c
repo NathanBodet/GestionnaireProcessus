@@ -1,7 +1,15 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#define TAILLETAB 4
+#include <sys/ipc.h>
+#include <sys/msg.h>
+
+#define TAILLETAB 10
+#define NBPROCESSUS 10
+
+int tabPid[NBPROCESSUS];
+int prioriteProcessus[NBPROCESSUS];
+int tempsProcessus[NBPROCESSUS];
 int priorites[TAILLETAB]; //Table d'allocation des priorités (choisie avec ces pourcentages-là par défaut)
 //affiche le tableau d'allocation des priorités
 void afficheTableau(){
@@ -108,6 +116,41 @@ int* genereRoundRobin(int taille){
 	return round;
 }
 
+int genereProcessus(int nombre,char* arg){
+	int pid,key;
+	int msgid;
+	char buffer [100];
+	if ((key = ftok("main.exe", 'A')) == -1) {
+		perror("Erreur de creation de la clé \n");
+		exit(1);
+    }
+    if ((msgid = msgget(key, 0750 | IPC_CREAT )) == -1) {
+		perror("Erreur de creation de la file\n");
+		exit(1);
+    }
+    sprintf(buffer, "%d",msgid);
+
+	for (int i = 0; i < NBPROCESSUS; ++i)
+	{
+		pid = fork();
+		tabPid[i] = pid;
+		prioriteProcessus[i] = i;
+		tempsProcessus[i] = rand();
+		printf("%d\n", tempsProcessus[i]);
+		if(pid == 0){
+			if (execl("test","test",buffer,NULL) == -1){
+				printf("erreur de execl\n");
+	       		fflush(stdout);
+			}
+		}
+	}
+	return msgid;
+}
+
+int tourniquet(int msgid){
+
+}
+
 int main(int argc, char const *argv[])
 {
 	if(argc == 1){
@@ -127,5 +170,7 @@ int main(int argc, char const *argv[])
 	}
 	int pgcd = superPGCD(priorites);
 	int* roundRobin = genereRoundRobin(100/pgcd);
+	printf("%s\n", argv[0]);
+	tourniquet(genereProcessus(10,argv[0]));
 	return 0;
 }

@@ -1,10 +1,11 @@
 #include <stdio.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+
 int main(int argc, char const *argv[])
 {
-	int j = 0;
-	printf("qergrh");
-	for(int i = 0; i<1000000000; i++){
-		j += i;
-	}
+	int reponse;
+	int msgid = atoi(argv[1]);
+	msgrcv(msgid, &reponse, sizeof(int),getpid(),0);
 	return 0;
 }
