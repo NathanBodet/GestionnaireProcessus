@@ -11,6 +11,17 @@ int tabPid[NBPROCESSUS];
 int prioriteProcessus[NBPROCESSUS];
 int tempsProcessus[NBPROCESSUS];
 int priorites[TAILLETAB]; //Table d'allocation des priorités (choisie avec ces pourcentages-là par défaut)
+int tabDate[NBPROCESSUS];
+
+typedef struct elem {
+	int valeur;
+	int temps;
+	struct elem*suivant;
+}element;
+typedef element * T;
+
+T filePriorite[TAILLETAB];
+
 //affiche le tableau d'allocation des priorités
 void afficheTableau(){
 	printf("**********************************************\nTableau des priorités:\n");
@@ -22,7 +33,7 @@ void afficheTableau(){
 	printf("———————————————————————————————————\n");
 	printf("**********************************************\n");
 }
-
+//permet de modifier les valeurs du tableau d'allocation CPU
 void modifierTableau(){
 	//on affiche le tableau si l'utilisateur a choisi -t
 	afficheTableau();
@@ -59,7 +70,11 @@ void modifierTableau(){
 			}
 			//test si les valeurs sont correctes. Si oui, on applique les modifications
 			/*a adapter à TAILLETAB*/
-			if(prioriteTemp[0] + prioriteTemp[1] + prioriteTemp[2] + prioriteTemp[3] == 100){
+			int somme= 0;
+			for(int i =0; i<TAILLETAB; i++){
+				somme+=prioriteTemp[i];
+			}
+			if(somme == 100){
 				resultatVrai = 1;
 				for (int i = 0; i < TAILLETAB; i+=1){
 					priorites[i] = prioriteTemp[i];
@@ -71,7 +86,7 @@ void modifierTableau(){
 		afficheTableau();
 	}
 }
-
+//renvoie le PGCD de a et b
 int PGCD(int a, int b){
     if(a==b){
             return a;        
@@ -83,7 +98,7 @@ int PGCD(int a, int b){
            return PGCD(a, b-a);
     }
 }
-
+//renvoie le PGCD de tous les entiers du tableau
 int superPGCD(int tab[]){
 	int pgcd = tab[0];
 	for (int i = 0; i < TAILLETAB-1; ++i)
@@ -92,31 +107,34 @@ int superPGCD(int tab[]){
 	}
 	return pgcd;
 }
-
+//genere le tourniquet de priorités en fonction du tableau de priorités
 int* genereRoundRobin(int taille){
 	int *round = malloc(taille * sizeof(int));
 	int compteur[taille];
 	int increment = 0;
 	for (int i = 0; i < TAILLETAB; ++i)
 	{	
-		compteur[i] = priorites[i]/taille;
+		compteur[i] =priorites[i]*taille/100;
 	}
 	for (int i = 0; i < taille; ++i)
 	{
 		while(compteur[increment] == 0){
 			increment++;
-			if(increment > TAILLETAB){
+			if(increment >= TAILLETAB){
 				increment = 0;
 			}
 		}
 		round[i] = increment;
 		compteur[increment]--;
 		increment++;
+		if(increment >= TAILLETAB){
+			increment = 0;
+		}
 	}
 	return round;
 }
-
-int genereProcessus(int nombre,char* arg){
+//génère NBPROCESSUS processus
+int genereProcessus(){
 	int pid,key;
 	int msgid;
 	char buffer [100];
@@ -132,13 +150,13 @@ int genereProcessus(int nombre,char* arg){
 
 	for (int i = 0; i < NBPROCESSUS; ++i)
 	{
+		prioriteProcessus[i] = (int)(rand() / (double)RAND_MAX * 9);
+		tempsProcessus[i] = (int)(rand() / (double)RAND_MAX * 9);
+		tabDate[i] = (int)(rand() / (double)RAND_MAX * 9);
 		pid = fork();
 		tabPid[i] = pid;
-		prioriteProcessus[i] = i;
-		tempsProcessus[i] = rand();
-		printf("%d\n", tempsProcessus[i]);
 		if(pid == 0){
-			if (execl("test","test",buffer,NULL) == -1){
+			if (execl("processus","processus",buffer,NULL) == -1){
 				printf("erreur de execl\n");
 	       		fflush(stdout);
 			}
@@ -147,15 +165,88 @@ int genereProcessus(int nombre,char* arg){
 	return msgid;
 }
 
-int tourniquet(int msgid){
-
+int verifierTemps(){
+	int reponse = 0;
+	for(int i = 0; i<TAILLETAB; i++){
+		if(filePriorite[i] != NULL){
+			reponse = 1;
+		}
+	}
+	return reponse;
 }
+
+void ajouterFin(int priorite, int pidProcessus,int temps){
+	T temp,I;
+	temp=(T)malloc(sizeof(element));
+	temp->valeur = pidProcessus;
+	temp->temps = temps;
+	temp ->suivant=NULL;
+
+	if(filePriorite[priorite]==NULL){
+		filePriorite[priorite] =temp;
+	}
+	else{
+		I=filePriorite[priorite];
+		while(I->suivant!=NULL){
+			I=I->suivant;
+		}
+		I->suivant = temp;
+	}
+}
+void retirerDebut(int priorite){
+	T m;
+	int nouvellePrio;
+	if(filePriorite[priorite]!=NULL)
+	{
+		m=filePriorite[priorite]->suivant;
+		if(priorite == TAILLETAB-1){
+			nouvellePrio = 0;
+		} else {
+			nouvellePrio = priorite+1;
+		}
+		filePriorite[priorite]->temps --;
+		printf("decrementation de %d : valeur : %d\n",filePriorite[priorite]->valeur,filePriorite[priorite]->temps);
+		if(filePriorite[priorite]->temps !=0){
+			ajouterFin(nouvellePrio,filePriorite[priorite]->valeur,filePriorite[priorite]->temps);
+		}
+		free(filePriorite[priorite]);
+		filePriorite[priorite] = m;
+	}
+}
+
+int tourniquet(int msgid,int* roundRobin,int pgcd){
+	int date = 0;
+	int taille = 100/pgcd;
+	int moche = 0;
+	while(verifierTemps() == 1 || moche == 0){
+
+		for(int i = 0; i<NBPROCESSUS;i++){
+			if(date == tabDate[i]){
+				ajouterFin(prioriteProcessus[i],tabPid[i],tempsProcessus[i]);
+				moche = 1;
+			}
+		}
+		int file = roundRobin[date%taille];
+		for(int i =0; i<TAILLETAB; i++%taille){
+			if(filePriorite[file] != NULL){
+				retirerDebut(file);
+				i = TAILLETAB;
+			}
+			file = file++%TAILLETAB;
+		}
+		
+		date ++;
+	}
+	
+}
+
+
 
 int main(int argc, char const *argv[])
 {
-	if(argc == 1){
+	if(argc > 1 && strcmp ("-t", argv[1]) != 0){
 		//différentes options de lancement : pour l'instant il n'y a que -t
-		printf("Vous n'avez pas entré d'options. Options disponibles :\n -t : afficher ou modifier la table d'allocation CPU\n");
+		printf("Vous n'avez pas entré d'options valides. Options disponibles :\n -t : afficher ou modifier la table d'allocation CPU\n");
 		return(1);
 	}
 
@@ -170,7 +261,6 @@ int main(int argc, char const *argv[])
 	}
 	int pgcd = superPGCD(priorites);
 	int* roundRobin = genereRoundRobin(100/pgcd);
-	printf("%s\n", argv[0]);
-	tourniquet(genereProcessus(10,argv[0]));
+	tourniquet(genereProcessus(),roundRobin,pgcd);
 	return 0;
 }
