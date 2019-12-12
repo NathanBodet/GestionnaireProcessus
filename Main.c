@@ -3,13 +3,21 @@
 #include <stdlib.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
+#include <unistd.h>
+#include <sys/sem.h>
+#include <errno.h>
+#include <sys/shm.h>
 
+#define quantum 1
+#define IFLAGS (SEMPERM | IPC_CREAT)
+#define SKEY   (key_t) IPC_PRIVATE	
+#define SEMPERM 0600
 #define TAILLETAB 10
 #define NBPROCESSUS 10
 
 int tabPid[NBPROCESSUS];
 int prioriteProcessus[NBPROCESSUS];
-int tempsProcessus[NBPROCESSUS];
+int* tempsProcessus;
 int priorites[TAILLETAB]; //Table d'allocation des priorités (choisie avec ces pourcentages-là par défaut)
 int tabDate[NBPROCESSUS];
 
@@ -18,9 +26,62 @@ typedef struct elem {
 	int temps;
 	struct elem*suivant;
 }element;
+
+typedef struct {
+    long type;			
+    pid_t pid;			
+} treponse;
+
 typedef element * T;
 
 T filePriorite[TAILLETAB];
+int sem_id,shmid,msgid;
+struct sembuf sem_oper_P ;  /* Operation P */
+struct sembuf sem_oper_V ; /* Operation V */
+
+int initsem(key_t semkey) 
+{
+    
+	int status = 0;		
+	int semid_init;
+
+   	union semun {
+		int val;
+		struct semid_ds *stat;
+		short * array;
+	} ctl_arg;
+
+    if ((semid_init = semget(semkey, 2, IFLAGS)) > 0) {
+		
+		short array[2] = {0,0};
+		ctl_arg.array = array;
+		status = semctl(semid_init, 0, SETALL, ctl_arg);
+		ctl_arg.val = 1;
+		semctl(semid_init, 0, SETVAL, ctl_arg);
+    }
+   if (semid_init == -1 || status == -1) { 
+		perror("Erreur initsem");
+		return (-1);
+    } else return (semid_init);
+}
+
+void P(int semnum) {
+	sem_oper_P.sem_num = semnum;
+	sem_oper_P.sem_op  = -1 ;
+	sem_oper_P.sem_flg = 0 ;
+	int retrn = semop(sem_id,&sem_oper_P,semnum);
+	
+	while(retrn < 0){
+		retrn = semctl(sem_id, semnum, GETVAL, 0);
+	}
+}
+
+void V(int semnum) {
+	sem_oper_V.sem_num = semnum;
+	sem_oper_V.sem_op  = 1 ;
+	sem_oper_V.sem_flg  = 0 ;
+	int retrn = semop(sem_id, &sem_oper_V, semnum);
+}
 
 //affiche le tableau d'allocation des priorités
 void afficheTableau(){
@@ -134,35 +195,44 @@ int* genereRoundRobin(int taille){
 	return round;
 }
 //génère NBPROCESSUS processus
-int genereProcessus(){
+void genereProcessus(){
 	int pid,key;
-	int msgid;
-	char buffer [100];
-	if ((key = ftok("main.exe", 'A')) == -1) {
+	char buffer [200];
+	if ((key = ftok("main", 'A')) == -1) {
 		perror("Erreur de creation de la clé \n");
 		exit(1);
-    }
+	}
     if ((msgid = msgget(key, 0750 | IPC_CREAT )) == -1) {
 		perror("Erreur de creation de la file\n");
 		exit(1);
     }
-    sprintf(buffer, "%d",msgid);
+	shmid = shmget(IPC_PRIVATE, sizeof(int)*NBPROCESSUS, 0666);
+  	tempsProcessus = (int *)shmat(shmid, NULL, 0);
+	sem_id = initsem(SKEY);
 
 	for (int i = 0; i < NBPROCESSUS; ++i)
 	{
 		prioriteProcessus[i] = (int)(rand() / (double)RAND_MAX * 9);
+		P(0);
 		tempsProcessus[i] = (int)(rand() / (double)RAND_MAX * 9);
+		V(0);
 		tabDate[i] = (int)(rand() / (double)RAND_MAX * 9);
 		pid = fork();
 		tabPid[i] = pid;
 		if(pid == 0){
-			if (execl("processus","processus",buffer,NULL) == -1){
+			sprintf(buffer, "%d %d %d",msgid,sem_id,tempsProcessus[i]);
+			if (execl("./processus","processus",buffer,(char*)NULL) == -1){
 				printf("erreur de execl\n");
 	       		fflush(stdout);
 			}
 		}
+		else {
+			P(0);
+			printf("pid : %d et priorite :%d et date arrivee %d et temps : %d\n",pid, prioriteProcessus[i],tabDate[i],tempsProcessus[i]);
+			V(0);
+		}
 	}
-	return msgid;
+	return;
 }
 
 int verifierTemps(){
@@ -204,8 +274,11 @@ void retirerDebut(int priorite){
 		} else {
 			nouvellePrio = priorite+1;
 		}
+		treponse requete;
+		requete.pid = getpid();
+		requete.type = filePriorite[priorite]->valeur;
 		filePriorite[priorite]->temps --;
-		printf("decrementation de %d : valeur : %d\n",filePriorite[priorite]->valeur,filePriorite[priorite]->temps);
+		msgsnd(msgid,&requete,sizeof(treponse)-4,0);
 		if(filePriorite[priorite]->temps !=0){
 			ajouterFin(nouvellePrio,filePriorite[priorite]->valeur,filePriorite[priorite]->temps);
 		}
@@ -214,7 +287,7 @@ void retirerDebut(int priorite){
 	}
 }
 
-int tourniquet(int msgid,int* roundRobin,int pgcd){
+int tourniquet(int* roundRobin,int pgcd){
 	int date = 0;
 	int taille = 100/pgcd;
 	int moche = 0;
@@ -222,7 +295,9 @@ int tourniquet(int msgid,int* roundRobin,int pgcd){
 
 		for(int i = 0; i<NBPROCESSUS;i++){
 			if(date == tabDate[i]){
+				P(0);
 				ajouterFin(prioriteProcessus[i],tabPid[i],tempsProcessus[i]);
+				V(0);
 				moche = 1;
 			}
 		}
@@ -232,9 +307,10 @@ int tourniquet(int msgid,int* roundRobin,int pgcd){
 				retirerDebut(file);
 				i = TAILLETAB;
 			}
-			file = file++%TAILLETAB;
+			file = (file+1)%TAILLETAB;
 		}
-		
+		//P(1);
+		sleep(quantum);
 		date ++;
 	}
 	
@@ -261,6 +337,11 @@ int main(int argc, char const *argv[])
 	}
 	int pgcd = superPGCD(priorites);
 	int* roundRobin = genereRoundRobin(100/pgcd);
-	tourniquet(genereProcessus(),roundRobin,pgcd);
+	
+	genereProcessus();
+	
+	tourniquet(roundRobin,pgcd);
+	shmctl(shmid, IPC_RMID, NULL);
+	semctl(sem_id, 0, IPC_RMID, NULL);
 	return 0;
 }
