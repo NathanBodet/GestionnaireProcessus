@@ -6,18 +6,17 @@
 #include <unistd.h>
 #include <sys/sem.h>
 #include <errno.h>
+#include <time.h>
 #include <sys/shm.h>
 
-#define quantum 500000
-#define IFLAGS (SEMPERM | IPC_CREAT)
-#define SKEY   (key_t) IPC_PRIVATE	
-#define SEMPERM 0600
+#define quantum 0
+#define MAXCHAR 100
 #define TAILLETAB 11 //nombre de priorités existantes
 #define NBPROCESSUS 10 //nombre de processus qui vont être lancés
 
 int tabPid[NBPROCESSUS]; //tableau contenant les PID des processus
 int prioriteProcessus[NBPROCESSUS]; // tableau contenant les priorités des processus
-int* tempsProcessus; // adresse de la zone de mémoire contenant les temps accordés aux processus (non fonctionnel)
+int tempsProcessus[NBPROCESSUS]; // adresse de la zone de mémoire contenant les temps accordés aux processus (non fonctionnel)
 int priorites[TAILLETAB]; //Table d'allocation des priorités (choisie avec des pourcentages égaux par défaut)
 int tabDate[NBPROCESSUS]; // tableau contenant les dates d'exécution des processus
 
@@ -35,7 +34,7 @@ typedef struct {
 typedef element * T;
 
 T filePriorite[TAILLETAB]; //files de priorité
-int shmid,msgid;
+int msgid,isRandom;
 
 int isProcFinished(int pid){
 
@@ -54,6 +53,35 @@ int isProcFinished(int pid){
 	return 0;
 }
 
+void lireDonnes(){
+	FILE *fp;
+    char str[MAXCHAR];
+    char* filename = "donnees.txt";
+ 
+    fp = fopen(filename,"r");
+    if (fp == NULL){
+        printf("Erreur d'ouverture de fichier %s",filename);
+        exit(1);
+    }
+	int donnees[TAILLETAB];
+	fscanf (fp, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &donnees[0],&donnees[1],&donnees[2],&donnees[3],&donnees[4],&donnees[5],&donnees[6],&donnees[7],&donnees[8],&donnees[9],&donnees[10]);
+	for(int i =0; i<TAILLETAB;i++){
+		priorites[i] = donnees[i];
+	}
+	fscanf (fp, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &donnees[0],&donnees[1],&donnees[2],&donnees[3],&donnees[4],&donnees[5],&donnees[6],&donnees[7],&donnees[8],&donnees[9]);
+	for(int i =0; i<NBPROCESSUS;i++){
+		prioriteProcessus[i] = donnees[i];
+	}
+	fscanf (fp, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &donnees[0],&donnees[1],&donnees[2],&donnees[3],&donnees[4],&donnees[5],&donnees[6],&donnees[7],&donnees[8],&donnees[9]);
+	for(int i =0; i<NBPROCESSUS;i++){
+		tabDate[i] = donnees[i];
+	}
+	fscanf (fp, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &donnees[0],&donnees[1],&donnees[2],&donnees[3],&donnees[4],&donnees[5],&donnees[6],&donnees[7],&donnees[8],&donnees[9]);
+	for(int i =0; i<NBPROCESSUS;i++){
+		tempsProcessus[i] = donnees[i];
+	}
+    fclose(fp);
+}
 //affiche le tableau d'allocation des priorités
 void afficheTableau(){
 	printf("**********************************************\nTableau des priorités:\n");
@@ -190,15 +218,15 @@ void genereProcessus(){
 		perror("Erreur de creation de la file\n");
 		exit(1);
     }
-    //création d'un segment de mémoire partagé dont l'id sera transmis aux processus
-	shmid = shmget(IPC_PRIVATE, sizeof(int)*NBPROCESSUS, 0666);
-  	tempsProcessus = (int *)shmat(shmid, NULL, 0);
 	//création des processus
+	srand (time (NULL));
 	for (int i = 0; i < NBPROCESSUS; ++i)
 	{
-		prioriteProcessus[i] = (int)(rand() / (double)RAND_MAX * 9);
-		tempsProcessus[i] = (int)(rand() / (double)RAND_MAX * 9);
-		tabDate[i] = (int)(rand() / (double)RAND_MAX * 9);
+		if(isRandom == 1){
+			prioriteProcessus[i] = (int)(rand() / (double)RAND_MAX * TAILLETAB-1);
+			tempsProcessus[i] =1+ (int)(rand() / (double)RAND_MAX * 10);
+			tabDate[i] = (int)(rand() / (double)RAND_MAX * TAILLETAB-1);
+		}
 		pid = fork();
 		tabPid[i] = pid;
 		if(pid == 0){
@@ -275,6 +303,8 @@ void retirerDebut(int priorite,int date){
 		msgsnd(msgid,&requete,sizeof(treponse)-4,0);
 
 		char* message = malloc(100);
+		free(message);
+		message = malloc(100);
 		if(date < 10){
 			printf("%d    ",date);
 		} else {
@@ -298,6 +328,7 @@ void retirerDebut(int priorite,int date){
 		}
 		append(message,'|');
 		printf("%s\n",message);
+		free(message);
 
 		if(filePriorite[priorite]->temps !=0){//décale le processus d'une file de message uniquement s'il lui reste du temps d'éxecution
 			ajouterFin(nouvellePrio,filePriorite[priorite]->valeur,filePriorite[priorite]->temps);
@@ -309,6 +340,7 @@ void retirerDebut(int priorite,int date){
 
 //tourniquet qui va distribuer du temps de processeur entre les divers processus
 int tourniquet(int* roundRobin,int pgcd){
+	printf("**********************************************\n");
 	printf("Début du tourniquet\n\n");
 	printf("date |P0|P1|P2|P3|P4|P5|P6|P7|P8|P9|\n");
 	fflush(stdout);
@@ -342,9 +374,10 @@ int tourniquet(int* roundRobin,int pgcd){
 
 int main(int argc, char const *argv[])
 {
-	if(argc > 1 && strcmp ("-t", argv[1]) != 0){
+	isRandom = 1;
+	if(argc > 1 && (strcmp ("-t", argv[1]) != 0 && strcmp ("-f", argv[1]) != 0)){
 		//différentes options de lancement : pour l'instant il n'y a que -t
-		printf("Vous n'avez pas entré d'options valides. Options disponibles :\n -t : afficher ou modifier la table d'allocation CPU\n");
+		printf("Vous n'avez pas entré d'options valides. Options disponibles :\n -t : afficher ou modifier la table d'allocation CPU\n -f : utiliser les données de donnees.txt au lieu de données aléatoires\n");
 		return(1);
 	}
 	//on définit des priorités égales par défaut
@@ -355,18 +388,23 @@ int main(int argc, char const *argv[])
 	priorites[TAILLETAB-1] = 10;
 
 	//Si il y a l'argument '-t', on affiche la table d'allocation CPU
-	if(argc == 2 && strcmp ("-t", argv[1]) == 0){
+
+	if(argc == 2)
+		if(strcmp ("-t", argv[1]) == 0){
 		modifierTableau();
+	} else if (strcmp ("-f", argv[1]) == 0){
+		lireDonnes();
+		isRandom = 0;
 	}
 	//on trouve le pgcd des priorités définies pour déterminer la taille du tourniquet (qui sera de 100/pgcd)
 	int pgcd = superPGCD(priorites);
+
 	//on génère le tourniquet
 	int* roundRobin = genereRoundRobin(100/pgcd);
 	
 	genereProcessus();
 	
 	tourniquet(roundRobin,pgcd);
-	//on supprime le semaphore et le segment de mémoire partagé
-	shmctl(shmid, IPC_RMID, NULL);
+	msgctl(msgid, IPC_RMID,NULL);
 	return 0;
 }
