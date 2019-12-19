@@ -8,7 +8,7 @@
 #include <errno.h>
 #include <sys/shm.h>
 
-#define quantum 1
+#define quantum 500000
 #define IFLAGS (SEMPERM | IPC_CREAT)
 #define SKEY   (key_t) IPC_PRIVATE	
 #define SEMPERM 0600
@@ -35,9 +35,7 @@ typedef struct {
 typedef element * T;
 
 T filePriorite[TAILLETAB]; //files de priorité
-int sem_id,shmid,msgid;
-struct sembuf sem_oper_P ;  /* Operation P */
-struct sembuf sem_oper_V ; /* Operation V */
+int shmid,msgid;
 
 int isProcFinished(int pid){
 
@@ -54,50 +52,6 @@ int isProcFinished(int pid){
 		}
 	}
 	return 0;
-}
-
-int initsem(key_t semkey) //initialisation des semaphores
-{
-    
-	int status = 0;		
-	int semid_init;
-
-   	union semun {
-		int val;
-		struct semid_ds *stat;
-		short * array;
-	} ctl_arg;
-
-    if ((semid_init = semget(semkey, 2, IFLAGS)) > 0) {
-		
-		short array[2] = {0,0};
-		ctl_arg.array = array;
-		status = semctl(semid_init, 0, SETALL, ctl_arg);
-		ctl_arg.val = 1;
-		semctl(semid_init, 0, SETVAL, ctl_arg);
-    }
-   if (semid_init == -1 || status == -1) { 
-		perror("Erreur initsem");
-		return (-1);
-    } else return (semid_init);
-}
-
-void P(int semnum) { // operation P sur une semaphore
-	sem_oper_P.sem_num = semnum;
-	sem_oper_P.sem_op  = -1 ;
-	sem_oper_P.sem_flg = 0 ;
-	int retrn = semop(sem_id,&sem_oper_P,semnum);
-	
-	while(retrn < 0){
-		retrn = semctl(sem_id, semnum, GETVAL, 0);
-	}
-}
-
-void V(int semnum) {// operation V sur une semaphore
-	sem_oper_V.sem_num = semnum;
-	sem_oper_V.sem_op  = 1 ;
-	sem_oper_V.sem_flg  = 0 ;
-	int retrn = semop(sem_id, &sem_oper_V, semnum);
 }
 
 //affiche le tableau d'allocation des priorités
@@ -239,28 +193,23 @@ void genereProcessus(){
     //création d'un segment de mémoire partagé dont l'id sera transmis aux processus
 	shmid = shmget(IPC_PRIVATE, sizeof(int)*NBPROCESSUS, 0666);
   	tempsProcessus = (int *)shmat(shmid, NULL, 0);
-	sem_id = initsem(SKEY);
 	//création des processus
 	for (int i = 0; i < NBPROCESSUS; ++i)
 	{
 		prioriteProcessus[i] = (int)(rand() / (double)RAND_MAX * 9);
-		P(0);
 		tempsProcessus[i] = (int)(rand() / (double)RAND_MAX * 9);
-		V(0);
 		tabDate[i] = (int)(rand() / (double)RAND_MAX * 9);
 		pid = fork();
 		tabPid[i] = pid;
 		if(pid == 0){
-			sprintf(buffer, "%d %d %d",msgid,sem_id,tempsProcessus[i]);
+			sprintf(buffer, "%d %d",msgid,tempsProcessus[i]);
 			if (execl("./processus","processus",buffer,(char*)NULL) == -1){
 				printf("erreur de execl\n");
 	       		fflush(stdout);
 			}
 		}
 		else {
-			P(0);
 			printf("|%d		|%d		  |%d			|%d	      |\n",pid, prioriteProcessus[i],tabDate[i],tempsProcessus[i]);
-			V(0);
 		}
 	}
 	printf("———————————————————————————————————————————————————————————————————————\n");
@@ -360,7 +309,7 @@ void retirerDebut(int priorite,int date){
 
 //tourniquet qui va distribuer du temps de processeur entre les divers processus
 int tourniquet(int* roundRobin,int pgcd){
-	printf("Début du tourniquet\n");
+	printf("Début du tourniquet\n\n");
 	printf("date |P0|P1|P2|P3|P4|P5|P6|P7|P8|P9|\n");
 	fflush(stdout);
 	int date = 0;
@@ -371,9 +320,7 @@ int tourniquet(int* roundRobin,int pgcd){
 		//ajoute les processus dont les dates d'arrivée équivalent à la date courante
 		for(int i = 0; i<NBPROCESSUS;i++){
 			if(date == tabDate[i]){
-				P(0);
 				ajouterFin(prioriteProcessus[i],tabPid[i],tempsProcessus[i]);
-				V(0);
 				conditionProcessus = 1;
 			}
 		}
@@ -387,7 +334,7 @@ int tourniquet(int* roundRobin,int pgcd){
 			file = (file+1)%TAILLETAB;
 		}
 		//P(1);
-		sleep(quantum);
+		usleep(quantum);
 		date ++;
 	}
 	
@@ -421,6 +368,5 @@ int main(int argc, char const *argv[])
 	tourniquet(roundRobin,pgcd);
 	//on supprime le semaphore et le segment de mémoire partagé
 	shmctl(shmid, IPC_RMID, NULL);
-	semctl(sem_id, 0, IPC_RMID, NULL);
 	return 0;
 }
