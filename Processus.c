@@ -50,8 +50,6 @@ int main(int argc, char *argv[])
 	//boucle dans laquelle on va attendre un message du gestionnaire pour s'éxecuter pendant 1 quantum de temps
 	for(int i = 0; i<temps; i++){
 		msgrcv(msgid, &reponse, sizeof(treponse)-4,getpid(),0);
-		printf("decrementation : %d quantums ont été effectués\n",i);
-		fflush(stdout);
 		//V(1);
 	}
 

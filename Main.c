@@ -12,7 +12,7 @@
 #define IFLAGS (SEMPERM | IPC_CREAT)
 #define SKEY   (key_t) IPC_PRIVATE	
 #define SEMPERM 0600
-#define TAILLETAB 10 //nombre de priorités existantes
+#define TAILLETAB 11 //nombre de priorités existantes
 #define NBPROCESSUS 10 //nombre de processus qui vont être lancés
 
 int tabPid[NBPROCESSUS]; //tableau contenant les PID des processus
@@ -38,6 +38,23 @@ T filePriorite[TAILLETAB]; //files de priorité
 int sem_id,shmid,msgid;
 struct sembuf sem_oper_P ;  /* Operation P */
 struct sembuf sem_oper_V ; /* Operation V */
+
+int isProcFinished(int pid){
+
+	for(int i = 0; i < TAILLETAB; i++){
+		if(filePriorite[i] != NULL){
+			T temp = filePriorite[i];
+			while(temp != NULL){
+				if(temp->valeur == pid){
+					return 1;
+				}
+				temp = temp->suivant;
+
+			}
+		}
+	}
+	return 0;
+}
 
 int initsem(key_t semkey) //initialisation des semaphores
 {
@@ -132,10 +149,14 @@ void modifierTableau(){
 			}
 			//teste si les valeurs sont correctes. Si oui, on applique les modifications
 			int somme= 0;
+			int isZero = 1;
 			for(int i =0; i<TAILLETAB; i++){
 				somme+=prioriteTemp[i];
+				if (prioriteTemp[i] == 0){
+					isZero = 0;
+				}
 			}
-			if(somme == 100){
+			if(somme == 100 && isZero == 1){
 				resultatVrai = 1;
 				for (int i = 0; i < TAILLETAB; i+=1){
 					priorites[i] = prioriteTemp[i];
@@ -202,6 +223,8 @@ int* genereRoundRobin(int taille){
 
 //génère NBPROCESSUS processus
 void genereProcessus(){
+	printf("———————————————————————————————————————————————————————————————————————\n");
+	printf("| pid		| priorite	  | date arrivee	|temps	      |\n");
 	int pid,key;
 	char buffer [200];
 	//création d'une file de messages dont l'id sera transmis aux processus
@@ -236,10 +259,11 @@ void genereProcessus(){
 		}
 		else {
 			P(0);
-			printf("pid : %d et priorite :%d et date arrivee %d et temps : %d\n",pid, prioriteProcessus[i],tabDate[i],tempsProcessus[i]);
+			printf("|%d		|%d		  |%d			|%d	      |\n",pid, prioriteProcessus[i],tabDate[i],tempsProcessus[i]);
 			V(0);
 		}
 	}
+	printf("———————————————————————————————————————————————————————————————————————\n");
 	return;
 }
 
@@ -274,8 +298,16 @@ void ajouterFin(int priorite, int pidProcessus,int temps){
 	}
 }
 
+//ajoute un caractère à une chaîne de caractères
+int  append(char*s, char c) {
+    int len = strlen(s);
+    s[len] = c;
+    s[len+1] = '\0';
+    return 0;
+}
+
 //permet à un processus de s'éxecuter pendant un quantum de temps et retire le processus de sa file de priorité actuelle pour le "décaler"
-void retirerDebut(int priorite){
+void retirerDebut(int priorite,int date){
 	T m;
 	int nouvellePrio;
 	if(filePriorite[priorite]!=NULL)
@@ -292,6 +324,32 @@ void retirerDebut(int priorite){
 		requete.type = filePriorite[priorite]->valeur;
 		filePriorite[priorite]->temps --;
 		msgsnd(msgid,&requete,sizeof(treponse)-4,0);
+
+		char* message = malloc(100);
+		if(date < 10){
+			printf("%d    ",date);
+		} else {
+			printf("%d   ",date);
+		}
+		
+		for(int i = 0; i<NBPROCESSUS;i++){
+			if(tabPid[i] == requete.type){
+				append(message,'|');
+				append(message,'0');
+				append(message,' ');
+			} else if (date < tabDate[i] || isProcFinished(tabPid[i]) == 0){
+				append(message,'|');
+				append(message,' ');
+				append(message,' ');
+			} else {
+				append(message,'|');
+				append(message,'*');
+				append(message,' ');
+			}
+		}
+		append(message,'|');
+		printf("%s\n",message);
+
 		if(filePriorite[priorite]->temps !=0){//décale le processus d'une file de message uniquement s'il lui reste du temps d'éxecution
 			ajouterFin(nouvellePrio,filePriorite[priorite]->valeur,filePriorite[priorite]->temps);
 		}
@@ -302,10 +360,13 @@ void retirerDebut(int priorite){
 
 //tourniquet qui va distribuer du temps de processeur entre les divers processus
 int tourniquet(int* roundRobin,int pgcd){
+	printf("Début du tourniquet\n");
+	printf("date |P0|P1|P2|P3|P4|P5|P6|P7|P8|P9|\n");
+	fflush(stdout);
 	int date = 0;
 	int taille = 100/pgcd;
-	int moche = 0;
-	while(verifierTemps() == 1 || moche == 0){
+	int conditionProcessus = 0;
+	while(verifierTemps() == 1 || conditionProcessus == 0){
 
 		//ajoute les processus dont les dates d'arrivée équivalent à la date courante
 		for(int i = 0; i<NBPROCESSUS;i++){
@@ -313,14 +374,14 @@ int tourniquet(int* roundRobin,int pgcd){
 				P(0);
 				ajouterFin(prioriteProcessus[i],tabPid[i],tempsProcessus[i]);
 				V(0);
-				moche = 1;
+				conditionProcessus = 1;
 			}
 		}
 		//choisit le processus à executer : si la file de priorité active est vide, on cherche dans la suivante, etc
 		int file = roundRobin[date%taille];
 		for(int i =0; i<TAILLETAB; i++%taille){
 			if(filePriorite[file] != NULL){
-				retirerDebut(file);
+				retirerDebut(file,date);
 				i = TAILLETAB;
 			}
 			file = (file+1)%TAILLETAB;
@@ -340,10 +401,11 @@ int main(int argc, char const *argv[])
 		return(1);
 	}
 	//on définit des priorités égales par défaut
-	for (int i = 0; i < TAILLETAB; ++i)
+	for (int i = 0; i < TAILLETAB-1; ++i)
 	{
-		priorites[i] = 100/TAILLETAB;
+		priorites[i] = 9;
 	}
+	priorites[TAILLETAB-1] = 10;
 
 	//Si il y a l'argument '-t', on affiche la table d'allocation CPU
 	if(argc == 2 && strcmp ("-t", argv[1]) == 0){
