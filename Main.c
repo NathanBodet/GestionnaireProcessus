@@ -9,7 +9,7 @@
 #include <time.h>
 #include <sys/shm.h>
 
-#define quantum 0
+#define quantum 200000
 #define MAXCHAR 100
 #define TAILLETAB 11 //nombre de priorités existantes
 #define NBPROCESSUS 10 //nombre de processus qui vont être lancés
