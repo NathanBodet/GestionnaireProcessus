@@ -134,7 +134,7 @@ void modifierTableau(){
 			int isZero = 1;
 			for(int i =0; i<TAILLETAB; i++){
 				somme+=prioriteTemp[i];
-				if (prioriteTemp[i] == 0){
+				if (prioriteTemp[i] == 0 || prioriteTemp[i] < 0){
 					isZero = 0;
 				}
 			}
@@ -233,7 +233,7 @@ void genereProcessus(){
 			sprintf(buffer, "%d %d",msgid,tempsProcessus[i]);
 			if (execl("./processus","processus",buffer,(char*)NULL) == -1){
 				printf("erreur de execl\n");
-	       		fflush(stdout);
+	       		exit(1);
 			}
 		}
 		else {
@@ -289,7 +289,7 @@ void retirerDebut(int priorite,int date){
 	int nouvellePrio;
 	if(filePriorite[priorite]!=NULL)
 	{
-		m=filePriorite[priorite]->suivant;
+		m = filePriorite[priorite]->suivant;
 		if(priorite == TAILLETAB-1){
 			nouvellePrio = 0;
 		} else {
@@ -344,19 +344,18 @@ int tourniquet(int* roundRobin,int pgcd){
 	printf("Début du tourniquet\n\n");
 	printf("date |P0|P1|P2|P3|P4|P5|P6|P7|P8|P9|\n");
 	fflush(stdout);
+
 	int date = 0;
 	int taille = 100/pgcd;
 	int conditionProcessus = 0;
 	while(verifierTemps() == 1 || conditionProcessus == 0){
 
-		//ajoute les processus dont les dates d'arrivée équivalent à la date courante
 		for(int i = 0; i<NBPROCESSUS;i++){
 			if(date == tabDate[i]){
 				ajouterFin(prioriteProcessus[i],tabPid[i],tempsProcessus[i]);
 				conditionProcessus = 1;
 			}
 		}
-		//choisit le processus à executer : si la file de priorité active est vide, on cherche dans la suivante, etc
 		int file = roundRobin[date%taille];
 		for(int i =0; i<TAILLETAB; i++%taille){
 			if(filePriorite[file] != NULL){
