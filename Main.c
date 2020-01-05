@@ -350,12 +350,14 @@ int tourniquet(int* roundRobin,int pgcd){
 	int conditionProcessus = 0;
 	while(verifierTemps() == 1 || conditionProcessus == 0){
 
+		//teste si un processus doit être ajouté au gestionnaire
 		for(int i = 0; i<NBPROCESSUS;i++){
 			if(date == tabDate[i]){
 				ajouterFin(prioriteProcessus[i],tabPid[i],tempsProcessus[i]);
 				conditionProcessus = 1;
 			}
 		}
+		//choisit le bon processus à exécuter et l'exécute
 		int file = roundRobin[date%taille];
 		for(int i =0; i<TAILLETAB; i++%taille){
 			if(filePriorite[file] != NULL){
@@ -364,7 +366,6 @@ int tourniquet(int* roundRobin,int pgcd){
 			}
 			file = (file+1)%TAILLETAB;
 		}
-		//P(1);
 		usleep(quantum);
 		date ++;
 	}
@@ -376,10 +377,13 @@ int main(int argc, char const *argv[])
 	isRandom = 1;
 	if(argc > 1 && (strcmp ("-t", argv[1]) != 0 && strcmp ("-f", argv[1]) != 0)){
 		//différentes options de lancement : pour l'instant il n'y a que -t
-		printf("Vous n'avez pas entré d'options valides. Options disponibles :\n -t : afficher ou modifier la table d'allocation CPU\n -f : utiliser les données de donnees.txt au lieu de données aléatoires\n");
+		printf("Vous n'avez pas entré d'options valides. Options disponibles :\n
+		 -t : afficher ou modifier la table d'allocation CPU\n
+		 -f : utiliser les données de donnees.txt au lieu de données aléatoires\n");
 		return(1);
 	}
-	//on définit des priorités égales par défaut
+
+	//on définit des priorités plus ou moins égales par défaut
 	for (int i = 0; i < TAILLETAB-1; ++i)
 	{
 		priorites[i] = 9;
@@ -387,6 +391,7 @@ int main(int argc, char const *argv[])
 	priorites[TAILLETAB-1] = 10;
 
 	//Si il y a l'argument '-t', on affiche la table d'allocation CPU
+	//Si il y a l'argument '-f', on lance le programme avec les données de test
 
 	if(argc == 2)
 		if(strcmp ("-t", argv[1]) == 0){
