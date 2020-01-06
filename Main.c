@@ -377,9 +377,7 @@ int main(int argc, char const *argv[])
 	isRandom = 1;
 	if(argc > 1 && (strcmp ("-t", argv[1]) != 0 && strcmp ("-f", argv[1]) != 0)){
 		//différentes options de lancement : pour l'instant il n'y a que -t
-		printf("Vous n'avez pas entré d'options valides. Options disponibles :\n
-		 -t : afficher ou modifier la table d'allocation CPU\n
-		 -f : utiliser les données de donnees.txt au lieu de données aléatoires\n");
+		printf("Vous n'avez pas entré d'options valides. Options disponibles :\n -t : afficher ou modifier la table d'allocation CPU\n -f : utiliser les données de donnees.txt au lieu de données aléatoires\n");
 		return(1);
 	}
 
